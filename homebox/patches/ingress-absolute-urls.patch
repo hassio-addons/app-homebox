@@ -1,0 +1,241 @@
+diff --git a/frontend/app.vue b/frontend/app.vue
+index 50e8c3f..4363a8b 100644
+--- a/frontend/app.vue
++++ b/frontend/app.vue
+@@ -6,11 +6,10 @@
+ 
+     <NuxtLayout>
+       <Html :lang="locale" :data-theme="theme || 'homebox'" />
+-      <Link rel="icon" type="image/svg" href="/favicon.svg" />
++      <Link rel="icon" type="image/svg" :href="`${subPath}/favicon.svg`" />
+       <Link rel="apple-touch-icon" href="/apple-touch-icon.png" size="180x180" />
+       <Link rel="mask-icon" href="/mask-icon.svg" color="#5b7f67" />
+       <Meta name="theme-color" content="#5b7f67" />
+-      <Link rel="manifest" href="/manifest.webmanifest" />
+       <NuxtPage />
+     </NuxtLayout>
+   </DialogProvider>
+@@ -18,9 +17,14 @@
+ 
+ <script lang="ts" setup>
+   import { useI18n } from "vue-i18n";
++  import { getSubPath } from "~~/lib/ingress";
+   import { DialogProvider } from "@/components/ui/dialog-provider";
+   import { Toaster } from "@/components/ui/sonner";
+ 
++  // Read once here rather than in the template: the head components render
++  // before this app's own plumbing gets another look at it.
++  const subPath = getSubPath();
++
+   const { theme } = useTheme();
+ 
+   const { locale } = useI18n();
+diff --git a/frontend/components/Collection/CreateModal.vue b/frontend/components/Collection/CreateModal.vue
+index 0b84763..0cae82e 100644
+--- a/frontend/components/Collection/CreateModal.vue
++++ b/frontend/components/Collection/CreateModal.vue
+@@ -25,6 +25,7 @@
+ 
+ <script setup lang="ts">
+   import { useI18n } from "vue-i18n";
++  import { getSubPath } from "~~/lib/ingress";
+   import { DialogID } from "@/components/ui/dialog-provider/utils";
+   import { toast } from "@/components/ui/sonner";
+   import BaseModal from "@/components/App/CreateModal.vue";
+@@ -107,7 +108,7 @@
+           // reload page to reflect new collection
+           window.location.reload();
+         } else {
+-          window.location.href = redirectTo.value;
++          window.location.href = `${getSubPath()}${redirectTo.value}`;
+         }
+       }
+     } else {
+diff --git a/frontend/components/Collection/JoinModal.vue b/frontend/components/Collection/JoinModal.vue
+index 43dbb6c..a153525 100644
+--- a/frontend/components/Collection/JoinModal.vue
++++ b/frontend/components/Collection/JoinModal.vue
+@@ -32,6 +32,7 @@
+ 
+ <script setup lang="ts">
+   import { useI18n } from "vue-i18n";
++  import { getSubPath } from "~~/lib/ingress";
+   import { DialogID } from "@/components/ui/dialog-provider/utils";
+   import { toast } from "@/components/ui/sonner";
+   import BaseModal from "@/components/App/CreateModal.vue";
+@@ -126,7 +127,7 @@
+         // reload page to reflect joined collection
+         window.location.reload();
+       } else {
+-        window.location.href = redirectTo.value;
++        window.location.href = `${getSubPath()}${redirectTo.value}`;
+       }
+     }
+   }
+diff --git a/frontend/components/Item/View/table/columns.ts b/frontend/components/Item/View/table/columns.ts
+index f9393c2..838f3d5 100644
+--- a/frontend/components/Item/View/table/columns.ts
++++ b/frontend/components/Item/View/table/columns.ts
+@@ -1,4 +1,5 @@
+ import type { Column, ColumnDef } from "@tanstack/vue-table";
++import { getSubPath } from "~~/lib/ingress";
+ import { h } from "vue";
+ import DropdownAction from "./data-table-dropdown.vue";
+ import { ArrowDown, ArrowUpDown, Check, X } from "lucide-vue-next";
+@@ -157,7 +158,13 @@ export function makeColumns({
+         const item = row.original as EntitySummary;
+         const loc = (item.location || item.parent) as { id: string; name: string } | null;
+         if (loc) {
+-          return h("a", { href: `/location/${loc.id}`, class: "hover:underline text-sm" }, loc.name);
++          // A plain anchor rather than a RouterLink, so the Ingress path has to
++          // be put on by hand; the router never sees this one.
++          return h(
++            "a",
++            { href: `${getSubPath()}/location/${loc.id}`, class: "hover:underline text-sm" },
++            loc.name
++          );
+         }
+         return h("div", { class: "text-sm text-muted-foreground" }, "");
+       },
+diff --git a/frontend/composables/use-api.ts b/frontend/composables/use-api.ts
+index 0f270c2..6f18408 100644
+--- a/frontend/composables/use-api.ts
++++ b/frontend/composables/use-api.ts
+@@ -1,4 +1,5 @@
+ import { PublicApi } from "~~/lib/api/public";
++import { stripSubPath } from "~~/lib/ingress";
+ import { UserClient } from "~~/lib/api/user";
+ import { Requests } from "~~/lib/requests";
+ 
+@@ -57,7 +58,7 @@ export function useUserApi(): UserClient {
+ 
+         if (body?.error === "user does not have access to the requested tenant") {
+           console.log("user does not have access to the requested tenant");
+-          if (window.location.pathname == "/") {
++          if (stripSubPath(window.location.pathname) === "/") {
+             // do nothing
+             console.log("at root path, ignoring collectionId to prevent infinite redirect loop");
+           } else if (!prefs?.value?.collectionId) {
+diff --git a/frontend/composables/use-collections.ts b/frontend/composables/use-collections.ts
+index c31e6e7..27f26ee 100644
+--- a/frontend/composables/use-collections.ts
++++ b/frontend/composables/use-collections.ts
+@@ -1,4 +1,5 @@
+ import { ref, computed } from "vue";
++import { stripSubPath } from "~~/lib/ingress";
+ import { useUserApi } from "~/composables/use-api";
+ import { useViewPreferences } from "~/composables/use-preferences";
+ import { useRoute, navigateTo } from "#imports";
+@@ -14,7 +15,7 @@ const refreshing = ref(false);
+ 
+ export const useCollections = () => {
+   const load = async () => {
+-    if (window.location.pathname === "/") {
++    if (stripSubPath(window.location.pathname) === "/") {
+       console.debug("[useCollections] On root path '/', skipping load");
+       return;
+     }
+diff --git a/frontend/composables/use-server-events.ts b/frontend/composables/use-server-events.ts
+index 35e6853..c104055 100644
+--- a/frontend/composables/use-server-events.ts
++++ b/frontend/composables/use-server-events.ts
+@@ -1,4 +1,5 @@
+ import { useViewPreferences } from "./use-preferences";
++import { getSubPath } from "~~/lib/ingress";
+ import { watch } from "vue";
+ 
+ export enum ServerEvent {
+@@ -73,7 +74,9 @@ function connect(onmessage: (m: EventMessage) => void) {
+ 
+   const host = dev ? window.location.host.replace("3000", "7745") : window.location.host;
+ 
+-  let url = `${protocol}://${host}/api/v1/ws/events`;
++  // Built by hand rather than through "route()", so the Ingress path goes on
++  // here as well. A WebSocket address is one nothing can intercept later.
++  let url = `${protocol}://${host}${getSubPath()}/api/v1/ws/events`;
+   if (currentTenantId) {
+     url += `?tenant=${currentTenantId}`;
+   }
+diff --git a/frontend/middleware/auth.ts b/frontend/middleware/auth.ts
+index e9f0b37..4b1fd36 100644
+--- a/frontend/middleware/auth.ts
++++ b/frontend/middleware/auth.ts
+@@ -1,12 +1,20 @@
++import { stripSubPath } from "~~/lib/ingress";
++
+ export default defineNuxtRouteMiddleware(async () => {
+   const ctx = useAuthContext();
+   const api = useUserApi();
+   const redirectTo = useState("authRedirect");
+ 
++  // Ingress puts this app under a path of its own, which the address bar
++  // carries but this app does not know itself by. The comparisons below are
++  // against the app's own root, and the target is handed to the router, which
++  // puts the prefix back on: left in, it would come out doubled.
++  const path = stripSubPath(window.location.pathname);
++
+   if (!ctx.isAuthorized()) {
+-    if (window.location.pathname !== "/") {
++    if (path !== "/") {
+       console.debug("[middleware/auth] isAuthorized returned false, redirecting to /");
+-      redirectTo.value = window.location.pathname;
++      redirectTo.value = path;
+       return navigateTo("/");
+     }
+   }
+@@ -15,9 +23,9 @@ export default defineNuxtRouteMiddleware(async () => {
+     console.log("Fetching user data");
+     const { data, error } = await api.user.self();
+     if (error) {
+-      if (window.location.pathname !== "/") {
++      if (path !== "/") {
+         console.debug("[middleware/user] user is null and fetch failed, redirecting to /");
+-        redirectTo.value = window.location.pathname;
++        redirectTo.value = path;
+         return navigateTo("/");
+       }
+     }
+diff --git a/frontend/pages/index.vue b/frontend/pages/index.vue
+index bb102ad..ced9d0b 100644
+--- a/frontend/pages/index.vue
++++ b/frontend/pages/index.vue
+@@ -1,5 +1,6 @@
+ <script setup lang="ts">
+   import { useI18n } from "vue-i18n";
++  import { getSubPath } from "~~/lib/ingress";
+   import { toast } from "@/components/ui/sonner";
+   import MdiGithub from "~icons/mdi/github";
+   import MdiDiscord from "~icons/mdi/discord";
+@@ -214,7 +215,9 @@
+   }
+ 
+   function loginWithOIDC() {
+-    window.location.href = "/api/v1/users/login/oidc";
++    // A full page load out of the app, so it is addressed from the site root
++    // and needs the Ingress path spelled out.
++    window.location.href = `${getSubPath()}/api/v1/users/login/oidc`;
+   }
+ 
+   const [registerForm, toggleLogin] = useToggle();
+diff --git a/frontend/pages/reports/label-generator.vue b/frontend/pages/reports/label-generator.vue
+index c454a39..165b034 100644
+--- a/frontend/pages/reports/label-generator.vue
++++ b/frontend/pages/reports/label-generator.vue
+@@ -1,5 +1,6 @@
+ <script setup lang="ts">
+   import { useI18n } from "vue-i18n";
++  import { getSubPath } from "~~/lib/ingress";
+   import DOMPurify from "dompurify";
+   import { route } from "../../lib/api/base";
+   import { Toaster, toast } from "@/components/ui/sonner";
+@@ -37,7 +38,9 @@
+   const replaceHomeboxText = ref(labelBlankLine);
+ 
+   const displayProperties = reactive({
+-    baseURL: window.location.origin,
++    // Printed onto labels as a QR code, so it has to be the whole address
++    // this app answers on, Ingress path included.
++    baseURL: window.location.origin + getSubPath(),
+     assetRange: 1,
+     assetRangeMax: 91,
+     skipLabels: 0,

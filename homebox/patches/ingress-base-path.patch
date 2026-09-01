@@ -1,0 +1,97 @@
+diff --git a/frontend/lib/ingress.ts b/frontend/lib/ingress.ts
+new file mode 100644
+index 0000000..92a1ab1
+--- /dev/null
++++ b/frontend/lib/ingress.ts
+@@ -0,0 +1,29 @@
++// Home Assistant Ingress serves this app from a path it only settles on at
++// request time, and NGINX writes that path into the page on the way past. The
++// Ingress plugin hands it to this module once, at startup, and everything that
++// builds an address the router never sees reads it back from here.
++//
++// It lives in a plain module rather than behind "useRuntimeConfig()" so that
++// the table cell renderers and the other call sites outside a component setup
++// can reach it too, where there is no Nuxt instance to ask.
++
++let subPath = "";
++
++export function setSubPath(value: string) {
++  subPath = value;
++}
++
++export function getSubPath(): string {
++  return subPath;
++}
++
++// The other direction: takes an address out of the browser's location bar and
++// gives back the one this app knows itself by. Anything handed to the router
++// has to be stripped first, because the router puts the prefix back on.
++export function stripSubPath(path: string): string {
++  if (subPath && path.startsWith(subPath)) {
++    return path.slice(subPath.length) || "/";
++  }
++
++  return path;
++}
+diff --git a/frontend/nuxt.config.ts b/frontend/nuxt.config.ts
+index 2cfa942..4a70d8c 100644
+--- a/frontend/nuxt.config.ts
++++ b/frontend/nuxt.config.ts
+@@ -31,6 +31,11 @@ export default defineNuxtConfig({
+   // When the backend has telemetry enabled, the frontend will automatically enable it.
+   runtimeConfig: {
+     public: {
++      // Home Assistant Ingress serves this app from a path that is only known
++      // per request. NGINX writes it in here on the way past and the Ingress
++      // plugin reads it back out. Empty means the app owns the site root.
++      SUB_PATH: "",
++
+       // OpenTelemetry configuration (can be overridden by environment variables)
+       otelServiceName: process.env.NUXT_PUBLIC_OTEL_SERVICE_NAME || "homebox-frontend",
+       otelServiceVersion: process.env.NUXT_PUBLIC_OTEL_SERVICE_VERSION || "1.0.0",
+@@ -58,6 +63,11 @@ export default defineNuxtConfig({
+   css: ["@/assets/css/main.css"],
+ 
+   pwa: {
++    // Ingress hands this app out from a path with a session token in it, so a
++    // service worker registered there has a scope that moves under it, and the
++    // manifest describes an app living at the site root, which is not where
++    // Ingress puts it. Neither survives the trip, so this build has no PWA.
++    disable: true,
+     workbox: {
+       navigateFallbackDenylist: [/^\/api/],
+       cleanupOutdatedCaches: true,
+diff --git a/frontend/plugins/01.ingress.client.ts b/frontend/plugins/01.ingress.client.ts
+new file mode 100644
+index 0000000..bcf685e
+--- /dev/null
++++ b/frontend/plugins/01.ingress.client.ts
+@@ -0,0 +1,28 @@
++import { overrideParts } from "~~/lib/api/base/urls";
++import { setSubPath } from "~~/lib/ingress";
++
++// Homebox addresses its API from the site root. Under Ingress the site root
++// belongs to Home Assistant rather than to Homebox, so those calls would never
++// arrive. NGINX writes the path Ingress handed out into SUB_PATH per request,
++// and this is what reads it back.
++//
++// Every REST call and every attachment URL is built by "route()" out of the
++// prefix held in lib/api/base/urls, so moving that one value moves the whole
++// API surface with it. The numeric filename and the "pre" enforcement are what
++// put this ahead of the plugins that go on to use it.
++export default defineNuxtPlugin({
++  name: "ingress-sub-path",
++  enforce: "pre",
++  setup() {
++    const subPath = useRuntimeConfig().public.SUB_PATH || "";
++    if (!subPath) {
++      return;
++    }
++
++    setSubPath(subPath);
++
++    // The host here is the placeholder "route()" strips back out of its result.
++    // Only the prefix carries anything.
++    overrideParts("http://localhost.com", `${subPath}/api/v1`);
++  },
++});

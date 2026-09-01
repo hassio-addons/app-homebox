@@ -1,0 +1,23 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Community App: Homebox
+# Prepares the data directory
+# ==============================================================================
+declare pepper
+
+# Everything Homebox writes lives here: the SQLite database, and every photo,
+# receipt and manual attached to an item.
+mkdir -p /data/homebox/storage
+
+# Homebox mixes this secret into the API key hashes it stores, so that a copy
+# of the database on its own is not enough to use the keys in it. It has to
+# stay the same across restarts, since a new one invalidates every key that was
+# ever issued, so it is generated once and kept alongside the database.
+if ! bashio::fs.file_exists "/data/homebox/api_key_pepper"; then
+    bashio::log.info "Generating an API key pepper..."
+
+    pepper=$(head -c 48 /dev/urandom | base64 | tr -d '\n')
+    printf '%s' "${pepper}" > /data/homebox/api_key_pepper
+    chmod 600 /data/homebox/api_key_pepper
+fi

@@ -1,0 +1,29 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Community App: Homebox
+# Configures NGINX for use with Homebox
+# ==============================================================================
+
+# Generate Ingress configuration
+bashio::var.json \
+    interface "$(bashio::app.ip_address)" \
+    port "^$(bashio::app.ingress_port)" \
+    | tempio \
+        -template /etc/nginx/templates/ingress.gtpl \
+        -out /etc/nginx/servers/ingress.conf
+
+# The direct server is always generated, whether or not the port is published
+# to the host. Other apps on the internal network, a reverse proxy of your own
+# among them, reach this app there, and an Ingress path is no use to them: it
+# belongs to a session that expires.
+bashio::config.require.ssl
+
+bashio::var.json \
+    certfile "$(bashio::config 'certfile')" \
+    keyfile "$(bashio::config 'keyfile')" \
+    port "^7745" \
+    ssl "^$(bashio::config 'ssl')" \
+    | tempio \
+        -template /etc/nginx/templates/direct.gtpl \
+        -out /etc/nginx/servers/direct.conf

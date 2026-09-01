@@ -1,0 +1,80 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# Home Assistant Community App: Homebox
+# Runs the Homebox server
+# ==============================================================================
+declare log_level
+
+export HBOX_MODE="production"
+
+# Only ever listen on loopback; NGINX is what faces Ingress and the network.
+export HBOX_WEB_HOST="127.0.0.1"
+export HBOX_WEB_PORT="47745"
+
+# The database, and the directory underneath it that the attachments go in.
+# Homebox resolves the storage prefix against the root of the filesystem, which
+# is what puts it in this app's data directory rather than next to the binary.
+export HBOX_DATABASE_DRIVER="sqlite3"
+export HBOX_DATABASE_SQLITE_PATH="/data/homebox/homebox.db?_pragma=busy_timeout=2000&_pragma=journal_mode=WAL&_fk=1&_time_format=sqlite"
+export HBOX_STORAGE_CONN_STRING="file:///?no_tmp_dir=true"
+export HBOX_STORAGE_PREFIX_PATH="data/homebox/storage"
+
+# Everything reaching Homebox has come through the NGINX in front of it, which
+# is what puts the address it came from in the forwarded headers. Without this,
+# the rate limiting on the login form would see every attempt as coming from
+# loopback, and one person getting their password wrong would lock out the
+# whole house.
+export HBOX_OPTIONS_TRUST_PROXY="true"
+
+# Updates to this app arrive through the Home Assistant app store, so the
+# banner offering the ones published upstream is both wrong here and an
+# outbound request nobody asked for.
+export HBOX_OPTIONS_GITHUB_RELEASE_CHECK="false"
+
+# Kept out of the database on purpose; see the init script that makes it.
+HBOX_AUTH_API_KEY_PEPPER=$(</data/homebox/api_key_pepper)
+export HBOX_AUTH_API_KEY_PEPPER
+
+# Homebox has fewer levels of its own, and spells "warning" differently.
+log_level="info"
+case "$(bashio::string.lower "$(bashio::config 'log_level' 'info')")" in
+    trace)              log_level="trace" ;;
+    debug)              log_level="debug" ;;
+    info|notice)        log_level="info" ;;
+    warning)            log_level="warn" ;;
+    error)              log_level="error" ;;
+    fatal)              log_level="fatal" ;;
+esac
+export HBOX_LOG_LEVEL="${log_level}"
+
+# The address this app is reached at from the outside. Homebox has no way of
+# working it out on its own, and uses it for the links in the mail it sends.
+if bashio::config.has_value 'base_url'; then
+    HBOX_OPTIONS_HOSTNAME=$(bashio::config 'base_url')
+    export HBOX_OPTIONS_HOSTNAME
+fi
+
+HBOX_OPTIONS_ALLOW_REGISTRATION=$(bashio::config 'allow_registration' 'true')
+export HBOX_OPTIONS_ALLOW_REGISTRATION
+
+HBOX_OPTIONS_AUTO_INCREMENT_ASSET_ID=$(bashio::config 'auto_increment_asset_id' 'true')
+export HBOX_OPTIONS_AUTO_INCREMENT_ASSET_ID
+
+HBOX_WEB_MAX_UPLOAD_SIZE=$(bashio::config 'max_upload_size' '10')
+export HBOX_WEB_MAX_UPLOAD_SIZE
+
+# Without these, a forgotten password has no way out of the house.
+if bashio::config.has_value 'smtp_host'; then
+    HBOX_MAILER_HOST=$(bashio::config 'smtp_host')
+    HBOX_MAILER_PORT=$(bashio::config 'smtp_port' '587')
+    HBOX_MAILER_FROM=$(bashio::config 'smtp_from')
+    HBOX_MAILER_USERNAME=$(bashio::config 'smtp_user')
+    HBOX_MAILER_PASSWORD=$(bashio::config 'smtp_password')
+    export HBOX_MAILER_HOST HBOX_MAILER_PORT HBOX_MAILER_FROM \
+        HBOX_MAILER_USERNAME HBOX_MAILER_PASSWORD
+fi
+
+bashio::log.info "Starting Homebox..."
+
+exec homebox
