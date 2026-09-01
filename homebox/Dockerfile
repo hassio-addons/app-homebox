@@ -45,7 +45,7 @@ RUN \
 # cross-compiles, so this stage is pinned to the build machine as well and the
 # architecture to produce is passed in rather than emulated.
 # hadolint ignore=DL3029
-FROM --platform=${BUILDPLATFORM} golang:1.26-alpine AS backend
+FROM --platform=${BUILDPLATFORM} golang:1.27-alpine AS backend
 ARG BUILD_ARCH=amd64
 ARG HOMEBOX_VERSION
 
