@@ -4,6 +4,14 @@ server {
     include /etc/nginx/includes/server_params.conf;
     include /etc/nginx/includes/proxy_params.conf;
 
+    # Homebox answers every request with "X-Frame-Options: DENY", which no
+    # iframe survives, and an Ingress panel is an iframe. It is replaced with
+    # SAMEORIGIN, which is exactly as far as it needs to go: Ingress serves
+    # this app from below the root of the Home Assistant origin. Direct access
+    # is not framed by anything and keeps upstream's header as it is.
+    proxy_hide_header X-Frame-Options;
+    add_header X-Frame-Options SAMEORIGIN always;
+
     # Signing in through an identity provider ends with Homebox sending the
     # browser to "/home", which it builds from the site root rather than from
     # the request. Only redirects pointing back at this app are rewritten,
