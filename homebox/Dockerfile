@@ -1,5 +1,5 @@
 ARG BUILD_FROM=ghcr.io/hassio-addons/base:21.0.7
-ARG HOMEBOX_VERSION="0.26.2"
+ARG HOMEBOX_VERSION="0.27.0-rc.1"
 
 # Homebox's frontend is a Nuxt application that the backend serves out of its
 # own executable, so it has to be built before the backend is compiled.
