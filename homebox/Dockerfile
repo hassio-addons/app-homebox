@@ -92,7 +92,7 @@ RUN \
         libheif=1.23.4-r0 \
         libjxl=0.11.2-r1 \
         libwebp=1.6.0-r0 \
-        nginx=1.30.4-r1 \
+        nginx=1.30.6-r0 \
     \
     && rm -f -r \
         /etc/nginx \
